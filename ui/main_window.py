@@ -15,6 +15,7 @@ from ui.pages.edit_files_page import EditFilesPage
 
 from services.file_service import FileService
 from workers.rename_worker import RenameWorker
+from workers.replace_worker import ReplaceWorker
 
 class Ui_MainWindow:
     def setup_ui(self, MainWindow):
@@ -92,7 +93,7 @@ class MainWindow(QMainWindow):
             self.start_rename
         )
         self.edit_page.replaceCharRequested.connect(
-            self.show_replaced_files
+            self.start_replace
         )
 
     def setup_connections(self):
@@ -169,8 +170,8 @@ class MainWindow(QMainWindow):
         self.worker.moveToThread(self.thread)
 
         self.thread.started.connect(self.worker.run)
-        self.worker.progress.connect(self.on_progress)
-        self.worker.finished.connect(self.on_finished)
+        self.worker.progress.connect(self.on_rename_progress)
+        self.worker.finished.connect(self.on_rename_finished)
 
         self.worker.finished.connect(self.thread.quit)
         self.worker.finished.connect(self.worker.deleteLater)
@@ -178,11 +179,11 @@ class MainWindow(QMainWindow):
 
         self.thread.start()
 
-    def on_progress(self, current, total):
+    def on_rename_progress(self, current, total):
         self.edit_page.editFilesPbar.setMaximum(total)
         self.edit_page.editFilesPbar.setValue(current)
 
-    def on_finished(self, result):
+    def on_rename_finished(self, result):
         summary = []
         if renamed_files:
             summary.append(f"{result.renamed_files} filenames renamed.")
@@ -191,6 +192,42 @@ class MainWindow(QMainWindow):
 
         QMessageBox.information(self, "Done", "\n".join(summary) or "No changes made.")
         self.files_to_rename.clear()
+
+
+    def start_replace(self, find_text: str, replace_text: str):
+        self.thread = QThread()
+        self.worker = ReplaceWorker(self.files_to_rename, find_text, replace_text, self.file_service)
+
+        self.worker.moveToThread(self.thread)
+
+        self.thread.started.connect(self.worker.run)
+        self.worker.progress.connect(self.on_replace_progress)
+        self.worker.finished.connect(self.on_replace_finished)
+
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
+
+        self.thread.start()
+
+    def on_replace_progress(self, current, total):
+        self.edit_page.editFilesPbar.setMaximum(total)
+        self.edit_page.editFilesPbar.setValue(current)
+
+    def on_replace_finished(self, result):
+        summary = []
+        if result.renamed:
+            summary.append(f"{result.renamed} files renamed.")
+        if result.skipped:
+            summary.append(f"Skipped {len(result.skipped)} files:\n" + "\n".join(result.skipped))
+        if result.failed:
+            summary.append(f"Failed {len(result.failed)} files:\n" + "\n".join(result.failed))
+        summary = "\n\n".join(summary) if summary else "No changes made."
+        QMessageBox.information(self, "Success", summary)
+
+        self.files_to_rename.clear()
+
+
 
 
     def show_replaced_files(self, find_text: str, replace_text: str):
@@ -202,22 +239,6 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", "Find and Replace are the same — nothing to do.")
             return
 
-        try:
-            result = self.file_service.replace_chars(self.files_to_rename, find_text, replace_text)
-
-            summary_parts = []
-            if result.renamed:
-                summary_parts.append(f"{result.renamed} files renamed.")
-            if result.skipped:
-                summary_parts.append(f"Skipped {len(result.skipped)} files:\n" + "\n".join(result.skipped))
-            if result.failed:
-                summary_parts.append(f"Failed {len(result.failed)} files:\n" + "\n".join(result.failed))
-            summary = "\n\n".join(summary_parts) if summary_parts else "No changes made."
-
-            QMessageBox.information(self, "Success", summary)
-        except ValueError as e:
-            QMessageBox.warning(self, "Error", str(e))
-            return
 
 
     #     self.ui.add_btn.clicked.connect(self.on_add)

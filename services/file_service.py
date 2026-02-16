@@ -7,12 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from models.results import RenameResult
-
-@dataclass
-class ReplaceResult:
-    renamed: int = 0
-    skipped: list[str] = field(default_factory=list)
-    failed: list[str] = field(default_factory=list)
+    from models.results import ReplaceResult
 
 class FileService:
 
@@ -291,25 +286,17 @@ class FileService:
             f.write("\n".join(logs) + "\n")
         logs.clear()
 
-    def replace_chars(self, files_to_rename: list[Path], find_text: str, replace_text: str) -> ReplaceResult:
-        renamed = 0
-        skipped = []
-        failed = []
+    def replace_chars_in_one_file(self, file: Path, find_text: str, replace_text: str, result: "ReplaceResult") -> None:
+        if not file.is_file():
+            return result
 
-        for file in files_to_rename:
-            if file.is_file() and find_text in file.name:
-                new_file = file.with_name(file.name.replace(find_text, replace_text))
+        if find_text in file.name:
+            new_file = file.with_name(file.name.replace(find_text, replace_text))
 
-                try:
-                    file.rename(new_file)
-                    renamed += 1
-                except FileExistsError:
-                    skipped.append(f"Rename target exists: {new_file}")
-                except Exception as e:
-                    failed.append(f"{new_file} (Error: {e})")
-
-        return ReplaceResult(
-            renamed=renamed,
-            skipped=skipped,
-            failed=failed,
-        )
+            try:
+                file.rename(new_file)
+                result.renamed += 1
+            except FileExistsError:
+                result.skipped.append(f"Rename target exists: {new_file}")
+            except Exception as e:
+                result.failed.append(f"{new_file} (Error: {e})")
